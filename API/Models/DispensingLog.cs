@@ -7,6 +7,7 @@ public class DispensingLog
     public int MedkitId { get; set; }
     public int DispensingAmount { get; set; }
     public DateTime Date { get; set; }
-    public Box Box { get; set; }
-    public Medkit Medkit { get; set; }
+    
+    public virtual Box Box { get; set; } = null!;
+    public virtual Medkit Medkit { get; set; } = null!;
 }

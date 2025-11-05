@@ -1,0 +1,355 @@
+﻿using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
+using API.Models;
+using API.DTOs;
+using API.Data;
+using System.Text.Json;
+
+namespace API.Controllers
+{
+    [ApiController]
+    [Route("api/[controller]")]
+    public class PharmacyController : ControllerBase
+    {
+        private readonly ApplicationDbContext _context;
+        private readonly ILogger<PharmacyController> _logger;
+
+        public PharmacyController(ApplicationDbContext context, ILogger<PharmacyController> logger)
+        {
+            _context = context;
+            _logger = logger;
+        }
+
+        private async Task<DrugResponse?> GetDrugFromReference(string gid)
+        {
+            try
+            {
+                if (long.TryParse(gid, out long barcode))
+                {
+                    using var httpClient = new HttpClient();
+                    var response = await httpClient.GetAsync($"http://drug-reference:8080/api/drugs/barcode/{barcode}");
+
+                    if (response.IsSuccessStatusCode)
+                    {
+                        var json = await response.Content.ReadAsStringAsync();
+                        return JsonSerializer.Deserialize<DrugResponse>(json);
+                    }
+                }
+
+                return null;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Не удалось получить данные из справочника для GID: {GID}", gid);
+                return null;
+            }
+        }
+
+        [HttpPost("medication-info")]
+        public async Task<ActionResult<MedicationInfoResponse>> GetMedicationInfo([FromBody] ScanRequest request)
+        {
+            try
+            {
+                var (gid, sn) = ParseScanData(request.ScanData);
+
+                var box = await _context.Boxes
+                    .FirstOrDefaultAsync(b => b.GId == gid && (string.IsNullOrEmpty(sn) || b.SerialNumber == sn));
+
+                if (box == null)
+                {
+                    return NotFound(new { message = "Коробка не найдена" });
+                }
+
+                var drugInfo = await GetDrugFromReference(gid);
+
+                var response = new MedicationInfoResponse
+                {
+                    Info = new MedicationInfo
+                    {
+                        Name = drugInfo?.TradeName ?? "Неизвестный препарат",
+                        INN = drugInfo?.INN ?? "Неизвестное МНН",
+                        InBoxAmount = drugInfo?.PackageQuantity ?? 100,
+                        GID = box.GId,
+                        SN = box.SerialNumber
+                    },
+                    StorageInfo = new StorageInfo
+                    {
+                        InBoxRemaining = box.InBoxRemaining,
+                        ExpiryDate = box.ExpiryDate
+                    }
+                };
+
+                return Ok(response);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Ошибка при получении информации о препарате");
+                return StatusCode(500, new { message = "Внутренняя ошибка сервера" });
+            }
+        }
+
+        [HttpPost("receive")]
+        public async Task<ActionResult<OperationResponse>> ReceiveBox([FromBody] ReceivingRequest request)
+        {
+            try
+            {
+                var (gid, sn) = ParseScanData(request.ScanData);
+
+                if (string.IsNullOrEmpty(gid))
+                {
+                    return BadRequest(new OperationResponse
+                    {
+                        Success = false,
+                        Message = "Неверный формат данных сканирования"
+                    });
+                }
+                
+                var existingBox = await _context.Boxes
+                    .FirstOrDefaultAsync(b => b.GId == gid && b.SerialNumber == sn);
+
+                if (existingBox != null)
+                {
+                    return BadRequest(new OperationResponse
+                    {
+                        Success = false,
+                        Message = "Коробка с таким GID и SN уже существует"
+                    });
+                }
+                
+                var drugInfo = await GetDrugFromReference(gid);
+                
+                var box = new Box
+                {
+                    GId = gid,
+                    SerialNumber = sn,
+                    InBoxRemaining = drugInfo?.PackageQuantity ?? 100,
+                    ExpiryDate = request.ExpiryDate
+                };
+
+                _context.Boxes.Add(box);
+                await _context.SaveChangesAsync();
+                
+                var receivingLog = new ReceivingLog
+                {
+                    BoxId = box.Id,
+                    Date = DateTime.UtcNow
+                };
+
+                _context.ReceivingLogs.Add(receivingLog);
+                await _context.SaveChangesAsync();
+
+                return Ok(new OperationResponse
+                {
+                    Success = true,
+                    Message = "Коробка успешно принята на склад"
+                });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Ошибка при приемке коробки");
+                return StatusCode(500, new OperationResponse
+                {
+                    Success = false,
+                    Message = "Внутренняя ошибка сервера"
+                });
+            }
+        }
+
+        [HttpPost("dispense")]
+        public async Task<ActionResult<OperationResponse>> DispenseMedication([FromBody] DispensingRequest request)
+        {
+            try
+            {
+                var (gid, sn) = ParseScanData(request.ScanData);
+
+                if (string.IsNullOrEmpty(gid))
+                {
+                    return BadRequest(new OperationResponse 
+                    { 
+                        Success = false, 
+                        Message = "Неверный формат данных сканирования" 
+                    });
+                }
+
+                var box = await _context.Boxes
+                    .FirstOrDefaultAsync(b => b.GId == gid && b.SerialNumber == sn);
+
+                if (box == null)
+                {
+                    return NotFound(new OperationResponse 
+                    { 
+                        Success = false, 
+                        Message = "Коробка не найдена" 
+                    });
+                }
+                
+                if (box.InBoxRemaining < request.TransferAmount)
+                {
+                    return BadRequest(new OperationResponse 
+                    { 
+                        Success = false, 
+                        Message = $"Недостаточно препарата. Доступно: {box.InBoxRemaining}" 
+                    });
+                }
+                
+                if (box.ExpiryDate < DateTime.UtcNow)
+                {
+                    return BadRequest(new OperationResponse 
+                    { 
+                        Success = false, 
+                        Message = "Срок годности препарата истек" 
+                    });
+                }
+                
+                box.InBoxRemaining -= request.TransferAmount;
+                
+                var dispensingLog = new DispensingLog
+                {
+                    BoxId = box.Id,
+                    MedkitId = request.MedkitId,
+                    DispensingAmount = request.TransferAmount,
+                    Date = DateTime.UtcNow
+                };
+
+                _context.DispensingLogs.Add(dispensingLog);
+                await _context.SaveChangesAsync();
+
+                return Ok(new OperationResponse 
+                { 
+                    Success = true, 
+                    Message = "Препарат успешно выдан" 
+                });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Ошибка при выдаче препарата");
+                return StatusCode(500, new OperationResponse 
+                { 
+                    Success = false, 
+                    Message = "Внутренняя ошибка сервера" 
+                });
+            }
+        }
+        
+        [HttpPost("crew-info")]
+        public async Task<ActionResult<CrewResponse>> GetCrewInfo([FromBody] MedkitRequest request)
+        {
+            try
+            {
+                var medkit = await _context.Medkits
+                    .FirstOrDefaultAsync(m => m.Id == request.MedkitId);
+
+                if (medkit == null)
+                {
+                    return NotFound(new { message = "Аптечка не найдена" });
+                }
+
+                return Ok(new CrewResponse { CrewId = medkit.CrewId });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Ошибка при получении информации о бригаде");
+                return StatusCode(500, new { message = "Внутренняя ошибка сервера" });
+            }
+        }
+        
+        [HttpGet("dispensing-logs")]
+        public async Task<ActionResult<List<DispensingLogResponse>>> GetDispensingLogs()
+        {
+            try
+            {
+                var logs = await _context.DispensingLogs
+                    .Include(dl => dl.Box)
+                    .Include(dl => dl.Medkit)
+                    .OrderByDescending(dl => dl.Date)
+                    .ToListAsync();
+
+                var logResponses = new List<DispensingLogResponse>();
+        
+                foreach (var log in logs)
+                {
+                    var drugInfo = await GetDrugFromReference(log.Box.GId);
+            
+                    logResponses.Add(new DispensingLogResponse
+                    {
+                        BoxId = log.BoxId,
+                        MedkitId = log.MedkitId,
+                        TransferAmount = log.DispensingAmount,
+                        TransferDate = log.Date,
+                        MedicationName = drugInfo?.TradeName ?? "Неизвестный препарат",
+                        GID = log.Box.GId,
+                        SN = log.Box.SerialNumber,
+                        ExpiryDate = log.Box.ExpiryDate
+                    });
+                }
+
+                return Ok(logResponses);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Ошибка при получении логов выдачи");
+                return StatusCode(500, new { message = "Внутренняя ошибка сервера" });
+            }
+        }
+        
+        [HttpGet("receiving-logs")]
+        public async Task<ActionResult<List<ReceivingLogResponse>>> GetReceivingLogs()
+        {
+            try
+            {
+                var logs = await _context.ReceivingLogs
+                    .Include(rl => rl.Box)
+                    .OrderByDescending(rl => rl.Date)
+                    .ToListAsync();
+
+                var logResponses = new List<ReceivingLogResponse>();
+        
+                foreach (var log in logs)
+                {
+                    var drugInfo = await GetDrugFromReference(log.Box.GId);
+            
+                    logResponses.Add(new ReceivingLogResponse
+                    {
+                        BoxId = log.BoxId,
+                        ReceiveDate = log.Date,
+                        MedicationName = drugInfo?.TradeName ?? "Неизвестный препарат",
+                        GID = log.Box.GId,
+                        SN = log.Box.SerialNumber,
+                        ExpiryDate = log.Box.ExpiryDate
+                    });
+                }
+
+                return Ok(logResponses);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Ошибка при получении логов поступления");
+                return StatusCode(500, new { message = "Внутренняя ошибка сервера" });
+            }
+        }
+        
+        private (string gid, string sn) ParseScanData(string scanData)
+        {
+            try
+            {
+                _logger.LogInformation($"Raw scan data: {scanData}");
+                
+                if (scanData.Length >= 31) 
+                {
+                    string gid = scanData.Substring(3, 13); 
+                    string sn = scanData.Substring(18, 13); 
+
+                    _logger.LogInformation($"Parsed - GID: {gid}, SN: {sn}");
+                    return (gid, sn);
+                }
+                
+                return (string.Empty, string.Empty);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Ошибка парсинга scanData: {ScanData}", scanData);
+                return (string.Empty, string.Empty);
+            }
+        }
+    }
+}
