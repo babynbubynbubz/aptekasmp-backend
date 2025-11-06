@@ -44,7 +44,7 @@ namespace API.Controllers
                 return null;
             }
         }
-        
+
         [HttpPost("add-medkit")]
         public async Task<ActionResult<OperationResponse>> AddMedkit([FromBody] AddMedkitRequest request)
         {
@@ -61,7 +61,7 @@ namespace API.Controllers
                         Message = $"Медкит с ID {request.Id} уже существует"
                     });
                 }
-                
+
                 var medkit = new Medkit
                 {
                     Id = request.Id,
@@ -104,9 +104,9 @@ namespace API.Controllers
 
                 var box = await _context.Boxes
                     .FirstOrDefaultAsync(b => b.GId == gid && (string.IsNullOrEmpty(sn) || b.SerialNumber == sn));
-                
+
                 var drugInfo = await GetDrugFromReference(gid);
-                
+
                 if (box == null)
                 {
                     var responseWO = new MedicationInfoResponseWOStorage
@@ -116,8 +116,8 @@ namespace API.Controllers
                             Name = drugInfo?.TradeName ?? "Неизвестный препарат",
                             INN = drugInfo?.INN ?? "Неизвестное МНН",
                             InBoxAmount = drugInfo?.PackageQuantity ?? 100,
-                            GID = gid,  
-                            SN = sn     
+                            GID = gid,
+                            SN = sn
                         }
                     };
                     return Ok(responseWO);
@@ -131,8 +131,8 @@ namespace API.Controllers
                             Name = drugInfo?.TradeName ?? "Неизвестный препарат",
                             INN = drugInfo?.INN ?? "Неизвестное МНН",
                             InBoxAmount = drugInfo?.PackageQuantity ?? 100,
-                            GID = box.GId,  
-                            SN = box.SerialNumber  
+                            GID = box.GId,
+                            SN = box.SerialNumber
                         },
                         StorageInfo = new StorageInfo
                         {
@@ -142,7 +142,7 @@ namespace API.Controllers
                     };
                     return Ok(response);
                 }
-                
+
             }
             catch (Exception ex)
             {
@@ -166,7 +166,7 @@ namespace API.Controllers
                         Message = "Неверный формат данных сканирования"
                     });
                 }
-                
+
                 var existingBox = await _context.Boxes
                     .FirstOrDefaultAsync(b => b.GId == gid && b.SerialNumber == sn);
 
@@ -178,9 +178,9 @@ namespace API.Controllers
                         Message = "Коробка с таким GID и SN уже существует"
                     });
                 }
-                
+
                 var drugInfo = await GetDrugFromReference(gid);
-                
+
                 var box = new Box
                 {
                     GId = gid,
@@ -191,7 +191,7 @@ namespace API.Controllers
 
                 _context.Boxes.Add(box);
                 await _context.SaveChangesAsync();
-                
+
                 var receivingLog = new ReceivingLog
                 {
                     BoxId = box.Id,
@@ -227,10 +227,10 @@ namespace API.Controllers
 
                 if (string.IsNullOrEmpty(gid))
                 {
-                    return BadRequest(new OperationResponse 
-                    { 
-                        Success = false, 
-                        Message = "Неверный формат данных сканирования" 
+                    return BadRequest(new OperationResponse
+                    {
+                        Success = false,
+                        Message = "Неверный формат данных сканирования"
                     });
                 }
 
@@ -239,33 +239,33 @@ namespace API.Controllers
 
                 if (box == null)
                 {
-                    return NotFound(new OperationResponse 
-                    { 
-                        Success = false, 
-                        Message = "Коробка не найдена" 
+                    return NotFound(new OperationResponse
+                    {
+                        Success = false,
+                        Message = "Коробка не найдена"
                     });
                 }
-                
+
                 if (box.InBoxRemaining < request.TransferAmount)
                 {
-                    return BadRequest(new OperationResponse 
-                    { 
-                        Success = false, 
-                        Message = $"Недостаточно препарата. Доступно: {box.InBoxRemaining}" 
+                    return BadRequest(new OperationResponse
+                    {
+                        Success = false,
+                        Message = $"Недостаточно препарата. Доступно: {box.InBoxRemaining}"
                     });
                 }
-                
+
                 if (box.ExpiryDate < DateTime.UtcNow)
                 {
-                    return BadRequest(new OperationResponse 
-                    { 
-                        Success = false, 
-                        Message = "Срок годности препарата истек" 
+                    return BadRequest(new OperationResponse
+                    {
+                        Success = false,
+                        Message = "Срок годности препарата истек"
                     });
                 }
-                
+
                 box.InBoxRemaining -= request.TransferAmount;
-                
+
                 var dispensingLog = new DispensingLog
                 {
                     BoxId = box.Id,
@@ -277,23 +277,23 @@ namespace API.Controllers
                 _context.DispensingLogs.Add(dispensingLog);
                 await _context.SaveChangesAsync();
 
-                return Ok(new OperationResponse 
-                { 
-                    Success = true, 
-                    Message = "Препарат успешно выдан" 
+                return Ok(new OperationResponse
+                {
+                    Success = true,
+                    Message = "Препарат успешно выдан"
                 });
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Ошибка при выдаче препарата");
-                return StatusCode(500, new OperationResponse 
-                { 
-                    Success = false, 
-                    Message = "Внутренняя ошибка сервера" 
+                return StatusCode(500, new OperationResponse
+                {
+                    Success = false,
+                    Message = "Внутренняя ошибка сервера"
                 });
             }
         }
-        
+
         [HttpPost("crew-info")]
         public async Task<ActionResult<CrewResponse>> GetCrewInfo([FromBody] MedkitRequest request)
         {
@@ -315,7 +315,7 @@ namespace API.Controllers
                 return StatusCode(500, new { message = "Внутренняя ошибка сервера" });
             }
         }
-        
+
         [HttpGet("dispensing-logs")]
         public async Task<ActionResult<List<DispensingLogResponse>>> GetDispensingLogs()
         {
@@ -328,11 +328,11 @@ namespace API.Controllers
                     .ToListAsync();
 
                 var logResponses = new List<DispensingLogResponse>();
-        
+
                 foreach (var log in logs)
                 {
                     var drugInfo = await GetDrugFromReference(log.Box.GId);
-            
+
                     logResponses.Add(new DispensingLogResponse
                     {
                         BoxId = log.BoxId,
@@ -354,7 +354,7 @@ namespace API.Controllers
                 return StatusCode(500, new { message = "Внутренняя ошибка сервера" });
             }
         }
-        
+
         [HttpGet("receiving-logs")]
         public async Task<ActionResult<List<ReceivingLogResponse>>> GetReceivingLogs()
         {
@@ -366,11 +366,11 @@ namespace API.Controllers
                     .ToListAsync();
 
                 var logResponses = new List<ReceivingLogResponse>();
-        
+
                 foreach (var log in logs)
                 {
                     var drugInfo = await GetDrugFromReference(log.Box.GId);
-            
+
                     logResponses.Add(new ReceivingLogResponse
                     {
                         BoxId = log.BoxId,
@@ -390,22 +390,22 @@ namespace API.Controllers
                 return StatusCode(500, new { message = "Внутренняя ошибка сервера" });
             }
         }
-        
+
         private (string gid, string sn) ParseScanData(string scanData)
         {
             try
             {
                 _logger.LogInformation($"Raw scan data: {scanData}");
-                
-                if (scanData.Length >= 31) 
+
+                if (scanData.Length >= 31)
                 {
-                    string gid = scanData.Substring(3, 13); 
-                    string sn = scanData.Substring(18, 13); 
+                    string gid = scanData.Substring(4, 13);
+                    string sn = scanData.Substring(19, 13);
 
                     _logger.LogInformation($"Parsed - GID: {gid}, SN: {sn}");
                     return (gid, sn);
                 }
-                
+
                 return (string.Empty, string.Empty);
             }
             catch (Exception ex)
