@@ -52,32 +52,51 @@ namespace API.Controllers
             {
                 var (gid, sn) = ParseScanData(request.ScanData);
 
+                if (string.IsNullOrEmpty(gid))
+                {
+                    return BadRequest(new { message = "Неверный формат данных сканирования" });
+                }
+
                 var box = await _context.Boxes
                     .FirstOrDefaultAsync(b => b.GId == gid && (string.IsNullOrEmpty(sn) || b.SerialNumber == sn));
 
-                if (box == null)
-                {
-                    return NotFound(new { message = "Коробка не найдена" });
-                }
-
                 var drugInfo = await GetDrugFromReference(gid);
 
-                var response = new MedicationInfoResponse
+                MedicationInfoResponse response;
+
+                if (box == null)
                 {
-                    Info = new MedicationInfo
+                    response = new MedicationInfoResponse
                     {
-                        Name = drugInfo?.TradeName ?? "Неизвестный препарат",
-                        INN = drugInfo?.INN ?? "Неизвестное МНН",
-                        InBoxAmount = drugInfo?.PackageQuantity ?? 100,
-                        GID = box.GId,
-                        SN = box.SerialNumber
-                    },
-                    StorageInfo = new StorageInfo
+                        Info = new MedicationInfo
+                        {
+                            Name = drugInfo?.TradeName ?? "Неизвестный препарат",
+                            INN = drugInfo?.INN ?? "Неизвестное МНН",
+                            InBoxAmount = drugInfo?.PackageQuantity ?? 100,
+                            GID = gid,  
+                            SN = sn     
+                        }
+                    };
+                }
+                else
+                {
+                    response = new MedicationInfoResponse
                     {
-                        InBoxRemaining = box.InBoxRemaining,
-                        ExpiryDate = box.ExpiryDate
-                    }
-                };
+                        Info = new MedicationInfo
+                        {
+                            Name = drugInfo?.TradeName ?? "Неизвестный препарат",
+                            INN = drugInfo?.INN ?? "Неизвестное МНН",
+                            InBoxAmount = drugInfo?.PackageQuantity ?? 100,
+                            GID = box.GId,  
+                            SN = box.SerialNumber  
+                        },
+                        StorageInfo = new StorageInfo
+                        {
+                            InBoxRemaining = box.InBoxRemaining,
+                            ExpiryDate = box.ExpiryDate
+                        }
+                    };
+                }
 
                 return Ok(response);
             }
