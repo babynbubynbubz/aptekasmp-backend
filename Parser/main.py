@@ -1,46 +1,90 @@
-from sqlalchemy import create_engine
-import pandas as pd
-import fastapi
+from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
-import uvicorn
+import psycopg2
+import os
 
-class Response(BaseModel):
+class DrugResponse(BaseModel):
     barcode: int
     trade_name: str
     inn: str
+    package_quantity: int
 
-app = fastapi.FastAPI()
+app = FastAPI(title="Drug Reference API", version="1.0.0")
 
-@app.get("/api/drugs/barcode/{barcode}", response_model=Response)
-def search_by_barcode(barcode):
-    db_config = {
-        'host': 'localhost',
-        'port': 5432,
-        'database': 'treatment',
-        'user': 'postgres',
-        'password': '4543'
-    }
-
-    engine = create_engine(
-        f"postgresql://{db_config['user']}:{db_config['password']}@"
-        f"{db_config['host']}:{db_config['port']}/{db_config['database']}"
+def get_db_connection():
+    return psycopg2.connect(
+        host='db',
+        database='treatment',
+        user='postgres',
+        password='4543',
+        port=5432
     )
 
-    query = f"""
-    SELECT trade_name, inn, barcode
-    FROM drugs 
-    WHERE barcode = {barcode}
-    """
-
+@app.get("/api/drugs/barcode/{barcode}", response_model=DrugResponse)
+def search_by_barcode(barcode: int):
     try:
-        result = pd.read_sql(query, engine)
-
-        if not result.empty:
-            product = result.iloc[0]
-            return Response(inn=product['inn'], barcode=product['barcode'], trade_name=product['trade_name'])
+        conn = get_db_connection()
+        cur = conn.cursor()
+        
+        cur.execute(
+            "SELECT trade_name, inn, barcode, package_quantity FROM drugs WHERE barcode = %s", 
+            (barcode,)
+        )
+        
+        result = cur.fetchone()
+        cur.close()
+        conn.close()
+        
+        if result:
+            return DrugResponse(
+                trade_name=result[0],
+                inn=result[1],
+                barcode=result[2],
+                package_quantity=result[3]
+            )
         else:
-            return None
-
+            raise HTTPException(status_code=404, detail="Препарат не найден")
+            
+    except HTTPException:
+        raise
     except Exception as e:
-        print(e)
-        return None
+        print(f"Ошибка: {e}")
+        raise HTTPException(status_code=500, detail="Внутренняя ошибка сервера")
+
+@app.get("/health")
+def health_check():
+    return {"status": "healthy", "service": "drug-reference"}
+
+@app.get("/api/drugs/search")
+def search_by_name(name: str, limit: int = 10):
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor()
+        
+        cur.execute(
+            "SELECT trade_name, inn, barcode, package_quantity FROM drugs WHERE trade_name ILIKE %s LIMIT %s", 
+            (f'%{name}%', limit)
+        )
+        
+        results = cur.fetchall()
+        cur.close()
+        conn.close()
+        
+        drugs_list = []
+        for result in results:
+            drugs_list.append({
+                "trade_name": result[0],
+                "inn": result[1],
+                "barcode": result[2],
+                "package_quantity": result[3]
+            })
+        
+        return drugs_list
+            
+    except Exception as e:
+        print(f"Ошибка поиска: {e}")
+        raise HTTPException(status_code=500, detail="Ошибка поиска")
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=8080)
