@@ -7,8 +7,8 @@
 
     public class ReceivingRequest
     {
-        public string ScanData { get; set; } = string.Empty;  
-        public DateTime ExpiryDate { get; set; }
+        public string ScanData { get; set; } = string.Empty;
+        public string ExpiryDate { get; set; }
     }
 
     public class DispensingRequest

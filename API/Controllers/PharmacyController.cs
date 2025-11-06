@@ -166,6 +166,15 @@ namespace API.Controllers
                         Message = "Неверный формат данных сканирования"
                     });
                 }
+                
+                if (!DateTime.TryParse(request.ExpiryDate, out DateTime expiryDate))
+                {
+                    return BadRequest(new OperationResponse
+                    {
+                        Success = false,
+                        Message = "Неверный формат даты. Используйте формат YYYY-MM-DD"
+                    });
+                }
 
                 var existingBox = await _context.Boxes
                     .FirstOrDefaultAsync(b => b.GId == gid && b.SerialNumber == sn);
@@ -186,7 +195,7 @@ namespace API.Controllers
                     GId = gid,
                     SerialNumber = sn,
                     InBoxRemaining = drugInfo?.PackageQuantity ?? 100,
-                    ExpiryDate = request.ExpiryDate
+                    ExpiryDate = DateTime.SpecifyKind(expiryDate.Date, DateTimeKind.Utc)
                 };
 
                 _context.Boxes.Add(box);
@@ -255,7 +264,7 @@ namespace API.Controllers
                     });
                 }
 
-                if (box.ExpiryDate < DateTime.UtcNow)
+                if (box.ExpiryDate.Date < DateTime.UtcNow.Date)
                 {
                     return BadRequest(new OperationResponse
                     {
