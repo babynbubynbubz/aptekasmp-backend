@@ -22,4 +22,10 @@
     {
         public int MedkitId { get; set; }
     }
+	
+	public class AddMedkitRequest
+    {
+        public int Id { get; set; }
+        public int CrewId { get; set; }
+    }
 }

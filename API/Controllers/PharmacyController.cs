@@ -44,6 +44,51 @@ namespace API.Controllers
                 return null;
             }
         }
+        
+        [HttpPost("add-medkit")]
+        public async Task<ActionResult<OperationResponse>> AddMedkit([FromBody] AddMedkitRequest request)
+        {
+            try
+            {
+                var existingMedkit = await _context.Medkits
+                    .FirstOrDefaultAsync(m => m.Id == request.Id);
+
+                if (existingMedkit != null)
+                {
+                    return BadRequest(new OperationResponse
+                    {
+                        Success = false,
+                        Message = $"Медкит с ID {request.Id} уже существует"
+                    });
+                }
+                
+                var medkit = new Medkit
+                {
+                    Id = request.Id,
+                    CrewId = request.CrewId
+                };
+
+                _context.Medkits.Add(medkit);
+                await _context.SaveChangesAsync();
+
+                _logger.LogInformation("Добавлен новый медкит: ID {MedkitId}, Crew ID {CrewId}", request.Id, request.CrewId);
+
+                return Ok(new OperationResponse
+                {
+                    Success = true,
+                    Message = "Медкит успешно добавлен"
+                });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Ошибка при добавлении медкита");
+                return StatusCode(500, new OperationResponse
+                {
+                    Success = false,
+                    Message = "Внутренняя ошибка сервера"
+                });
+            }
+        }
 
         [HttpPost("medication-info")]
         public async Task<ActionResult<MedicationInfoResponse>> GetMedicationInfo([FromBody] ScanRequest request)
@@ -60,10 +105,8 @@ namespace API.Controllers
                 var box = await _context.Boxes
                     .FirstOrDefaultAsync(b => b.GId == gid && (string.IsNullOrEmpty(sn) || b.SerialNumber == sn));
                 
-                
                 var drugInfo = await GetDrugFromReference(gid);
                 
-
                 if (box == null)
                 {
                     var responseWO = new MedicationInfoResponseWOStorage
