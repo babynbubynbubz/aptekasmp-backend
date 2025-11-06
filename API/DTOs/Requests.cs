@@ -18,7 +18,6 @@
         public int TransferAmount { get; set; }
     }
 
-    // Остальные DTO без изменений
     public class MedkitRequest
     {
         public int MedkitId { get; set; }

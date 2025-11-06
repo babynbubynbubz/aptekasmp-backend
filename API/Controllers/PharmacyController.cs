@@ -59,14 +59,14 @@ namespace API.Controllers
 
                 var box = await _context.Boxes
                     .FirstOrDefaultAsync(b => b.GId == gid && (string.IsNullOrEmpty(sn) || b.SerialNumber == sn));
-
+                
+                
                 var drugInfo = await GetDrugFromReference(gid);
-
-                MedicationInfoResponse response;
+                
 
                 if (box == null)
                 {
-                    response = new MedicationInfoResponse
+                    var responseWO = new MedicationInfoResponseWOStorage
                     {
                         Info = new MedicationInfo
                         {
@@ -77,10 +77,11 @@ namespace API.Controllers
                             SN = sn     
                         }
                     };
+                    return Ok(responseWO);
                 }
                 else
                 {
-                    response = new MedicationInfoResponse
+                    var response = new MedicationInfoResponse
                     {
                         Info = new MedicationInfo
                         {
@@ -96,9 +97,9 @@ namespace API.Controllers
                             ExpiryDate = box.ExpiryDate
                         }
                     };
+                    return Ok(response);
                 }
-
-                return Ok(response);
+                
             }
             catch (Exception ex)
             {

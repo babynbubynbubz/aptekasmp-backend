@@ -18,6 +18,11 @@ namespace API.DTOs
         public int PackageQuantity { get; set; }
     }
 
+	public class MedicationInfoResponseWOStorage
+    {
+        public MedicationInfo Info { get; set; } = new();
+    }
+
     public class MedicationInfoResponse
     {
         public MedicationInfo Info { get; set; } = new();

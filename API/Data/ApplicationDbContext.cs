@@ -18,7 +18,6 @@ namespace API.Data
                 .HasIndex(b => new { b.GId, b.SerialNumber })
                 .IsUnique();
 
-
             modelBuilder.Entity<DispensingLog>()
                 .HasOne(dl => dl.Box)
                 .WithMany(b => b.DispensingLogs)
