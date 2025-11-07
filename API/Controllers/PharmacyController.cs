@@ -4,6 +4,8 @@ using API.Models;
 using API.DTOs;
 using API.Data;
 using System.Text.Json;
+using Npgsql;
+
 
 namespace API.Controllers
 {
@@ -26,13 +28,28 @@ namespace API.Controllers
             {
                 if (long.TryParse(gid, out long barcode))
                 {
-                    using var httpClient = new HttpClient();
-                    var response = await httpClient.GetAsync($"http://drug-reference:8080/api/drugs/barcode/{barcode}");
+                    await using var connection = new NpgsqlConnection(_context.Database.GetConnectionString());
+                    await connection.OpenAsync();
 
-                    if (response.IsSuccessStatusCode)
+                    const string sql = @"
+                        SELECT trade_name, inn, barcode, package_quantity 
+                        FROM drugs 
+                        WHERE barcode = @barcode";
+
+                    await using var command = new NpgsqlCommand(sql, connection);
+                    command.Parameters.AddWithValue("@barcode", barcode);
+
+                    await using var reader = await command.ExecuteReaderAsync();
+            
+                    if (await reader.ReadAsync())
                     {
-                        var json = await response.Content.ReadAsStringAsync();
-                        return JsonSerializer.Deserialize<DrugResponse>(json);
+                        return new DrugResponse
+                        {
+                            TradeName = reader.GetString(0),
+                            INN = reader.GetString(1),
+                            Barcode = reader.GetInt64(2),
+                            PackageQuantity = reader.GetDouble(3)
+                        };
                     }
                 }
 
@@ -40,7 +57,7 @@ namespace API.Controllers
             }
             catch (Exception ex)
             {
-                _logger.LogWarning(ex, "Не удалось получить данные из справочника для GID: {GID}", gid);
+                _logger.LogWarning(ex, "Не удалось получить данные из базы для GID: {GID}", gid);
                 return null;
             }
         }

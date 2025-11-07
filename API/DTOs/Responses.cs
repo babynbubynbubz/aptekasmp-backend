@@ -15,7 +15,7 @@ namespace API.DTOs
         public long Barcode { get; set; }
 
         [JsonPropertyName("package_quantity")]
-        public int PackageQuantity { get; set; }
+        public double PackageQuantity { get; set; }
     }
 
 	public class MedicationInfoResponseWOStorage
@@ -33,14 +33,14 @@ namespace API.DTOs
     {
         public string Name { get; set; } = string.Empty;
         public string INN { get; set; } = string.Empty;
-        public int InBoxAmount { get; set; }
+        public double InBoxAmount { get; set; }
         public string GID { get; set; } = string.Empty;
         public string SN { get; set; } = string.Empty;
     }
 
     public class StorageInfo
     {
-        public int InBoxRemaining { get; set; }
+        public double InBoxRemaining { get; set; }
         public DateTime ExpiryDate { get; set; }
     }
 
