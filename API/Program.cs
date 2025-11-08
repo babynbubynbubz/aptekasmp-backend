@@ -21,18 +21,22 @@ if (app.Environment.IsDevelopment())
 
 app.MapControllers();
 
+
 using (var scope = app.Services.CreateScope())
 {
-    var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-    
+    var services = scope.ServiceProvider;
     try
     {
-        db.Database.Migrate();
+        var context = services.GetRequiredService<ApplicationDbContext>();
         
+        context.Database.Migrate();
+        
+ 
     }
     catch (Exception ex)
     {
-        Console.WriteLine(ex.Message);
+        var logger = services.GetRequiredService<ILogger<Program>>();
+        logger.LogError(ex, "Произошла ошибка при применении миграций базы данных");
     }
 }
 
