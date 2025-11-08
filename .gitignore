@@ -3,6 +3,7 @@
 **/.vs/
 **/.vscode/
 appsettings.Development.json
+.idea/
 
 __pycache__/
 *.pyc
